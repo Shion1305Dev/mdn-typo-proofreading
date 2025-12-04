@@ -1,5 +1,6 @@
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pymongo import MongoClient
@@ -52,6 +53,7 @@ def import_documents(
         raise ValueError(f"Expected a JSON array at {json_path}, got {type(data).__name__}")
 
     # Normalize and deduplicate by (file, original, suggestion) within this batch.
+    now = datetime.now(timezone.utc)
     seen_keys: set[tuple[str, str, str]] = set()
     docs_to_insert: list[dict] = []
 
@@ -61,6 +63,10 @@ def import_documents(
 
         doc = dict(raw)
         _normalize_file_path(doc)
+
+        # Timestamps
+        doc.setdefault("created_at", now)
+        doc["updated_up"] = now
 
         key = None
         if all(k in doc for k in ("file", "original", "suggestion")):
@@ -137,4 +143,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

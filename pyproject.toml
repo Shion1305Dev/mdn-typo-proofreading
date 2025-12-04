@@ -11,8 +11,8 @@ dependencies = [
 ]
 
 [project.scripts]
-import-japanese-typos = "mdn_typer.import_japanese_typos:main"
-create-github-issues = "mdn_typer.create_github_issues:main"
+import-japanese-typos = "scripts.import_japanese_typos:main"
+create-github-issues = "scripts.create_github_issues:main"
 
 [tool.uv]
 package = true

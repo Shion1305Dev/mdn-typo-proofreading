@@ -1,5 +1,6 @@
 import argparse
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set, Tuple
 
@@ -246,7 +247,12 @@ def main() -> None:
 
         coll.update_one(
             {"_id": doc["_id"]},
-            {"$set": {"issue_number": issue_number}},
+            {
+                "$set": {
+                    "issue_number": issue_number,
+                    "updated_up": datetime.now(timezone.utc),
+                }
+            },
         )
         created += 1
 
