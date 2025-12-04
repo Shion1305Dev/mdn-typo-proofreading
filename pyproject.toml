@@ -1,0 +1,16 @@
+[project]
+name = "mdn-typo-proofreading"
+version = "0.1.0"
+description = "Utilities for loading MDN Japanese typo suggestions into MongoDB."
+readme = ""
+requires-python = ">=3.10"
+dependencies = [
+    "pymongo>=4.9.0",
+]
+
+[project.scripts]
+import-japanese-typos = "mdn_typer.import_japanese_typos:main"
+
+[tool.uv]
+package = true
+
