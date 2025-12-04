@@ -1,0 +1,58 @@
+---
+title: Number.MAX_SAFE_INTEGER
+slug: Web/JavaScript/Reference/Global_Objects/Number/MAX_SAFE_INTEGER
+---
+
+{{JSRef}}
+
+La constante **`Number.MAX_SAFE_INTEGER`** représente la valeur (sûre) maximale d'un nombre entier en JavaScript (2^53 -1).
+
+> [!NOTE]
+> Pour représenter des entiers supérieurs à cette valeur, on pourra utiliser le type {{jsxref("BigInt")}}.
+
+{{InteractiveExample("JavaScript Demo: Number.MAX_SAFE_INTEGER")}}
+
+```js interactive-example
+const x = Number.MAX_SAFE_INTEGER + 1;
+const y = Number.MAX_SAFE_INTEGER + 2;
+
+console.log(Number.MAX_SAFE_INTEGER);
+// Expected output: 9007199254740991
+
+console.log(x);
+// Expected output: 9007199254740992
+
+console.log(x === y);
+// Expected output: true
+```
+
+{{js_property_attributes(0,0,0)}}
+
+## Description
+
+La constante `MAX_SAFE_INTEGER` a une valeur de `9007199254740991`. Cette valeur s'explique par le fait que JavaScript utilise [les nombres au format de virgule flottante à double précision](http://en.wikipedia.org/wiki/Double_precision_floating-point_format) comme spécifié dans [IEEE 754](http://fr.wikipedia.org/wiki/IEEE_754) et ne peut représenter avec certitude qu'un nombre entre `-(2^53-1)` et `2^53 -1`.
+
+Dans ce contexte, « sûr » fait référence à la capacité à représenter exactement les entiers et à les comparer entre eux. Par exemple, `Number.MAX_SAFE_INTEGER + 1 === Number.MAX_SAFE_INTEGER + 2` vaudra `true` ce qui est mathématiquement incorrect. Pour plus d'informations, voir également {{jsxref("Number.isSafeInteger()")}}.
+
+`MAX_SAFE_INTEGER` est une propriété statique de {{jsxref("Number")}}, elle doit toujours être utilisée comme `Number.MAX_SAFE_INTEGER` et non pas comme la propriété d'un objet `Number` qui aurait été instancié.
+
+## Exemples
+
+```js
+Number.MAX_SAFE_INTEGER; // 9007199254740991
+Math.pow(2, 53) - 1; // 9007199254740991
+```
+
+## Spécifications
+
+{{Specifications}}
+
+## Compatibilité des navigateurs
+
+{{Compat}}
+
+## Voir aussi
+
+- {{jsxref("Number.MIN_SAFE_INTEGER")}}
+- {{jsxref("Number.isSafeInteger()")}}
+- {{jsxref("BigInt")}}

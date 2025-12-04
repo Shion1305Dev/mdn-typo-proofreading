@@ -1,0 +1,65 @@
+---
+title: notifications.clear()
+slug: Mozilla/Add-ons/WebExtensions/API/notifications/clear
+---
+
+{{AddonSidebar}}
+
+Efface une notification, compte tenu de son identifiant.
+
+C'est une fonction asynchrone qui renvoie une [`Promise`](/fr/docs/Web/JavaScript/Reference/Global_Objects/Promise).
+
+## Syntaxe
+
+```js
+var clearing = browser.notifications.clear(
+  id, // string
+);
+```
+
+### Paramètres
+
+- `id`
+  - : `string`. L'ID de la notification à effacer. C'est la même chose que l'ID transmis dans le callback {{WebExtAPIRef('notifications.create()')}}.
+
+### Valeur retournée
+
+Une [`Promise`](/fr/docs/Web/JavaScript/Reference/Global_Objects/Promise) qui sera remplie avec un booléen : `true` la notification a été effacée, ou `false` si ce n'est pas le cas (par exemple, parce que la notification référencée par `id` n'existe pas).
+
+## Compatibilité des navigateurs
+
+{{Compat}}
+
+## Exemples
+
+Cet exemple affiche une notification lorsque l'utilisateur clique sur une action du navigateur, à moins que la notification ne soit déjà affichée, auquel cas il efface la notification :
+
+```js
+var myNotification = "my-notification";
+
+function toggleAlarm(all) {
+  if (myNotification in all) {
+    browser.notifications.clear(myNotification);
+  } else {
+    browser.notifications.create(myNotification, {
+      type: "basic",
+      iconUrl: browser.extension.getURL("icons/cake-48.png"),
+      title: "Am imposing title",
+      message: "Some interesting content",
+    });
+  }
+}
+
+function handleClick() {
+  var gettingAll = browser.notifications.getAll();
+  gettingAll.then(toggleAlarm);
+}
+
+browser.browserAction.onClicked.addListener(handleClick);
+```
+
+{{WebExtExamples}}
+
+> [!NOTE]
+>
+> Cette API est basée sur l'API Chromium [`chrome.notifications`](https://developer.chrome.com/docs/extensions/reference/api/notifications).

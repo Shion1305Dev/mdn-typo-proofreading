@@ -1,0 +1,133 @@
+---
+title: extends
+slug: Web/JavaScript/Reference/Classes/extends
+---
+
+{{jsSidebar("Classes")}}
+
+Le mot-clé **`extends`** est utilisé dans les [déclarations](/fr/docs/Web/JavaScript/Reference/Statements/class) et [expressions de classes](/fr/docs/Web/JavaScript/Reference/Operators/class) afin de signifier qu'un type représenté par une classe hérite d'un autre type.
+
+{{InteractiveExample("JavaScript Demo: Classes Extends", "taller")}}
+
+```js interactive-example
+class DateFormatter extends Date {
+  getFormattedDate() {
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
+    return `${this.getDate()}-${months[this.getMonth()]}-${this.getFullYear()}`;
+  }
+}
+
+console.log(new DateFormatter("August 19, 1975 23:15:30").getFormattedDate());
+// Expected output: "19-Aug-1975"
+```
+
+## Syntaxe
+
+```js
+class ClasseFille extends ClasseParente { ... }
+```
+
+## Description
+
+Le mot-clé `extends` peut être utilisé pour créer des sous-classes de classes existantes (natives ou non).
+
+La propriété `.prototype` d'une classe fille (aussi appelée une _extension_) doit être un {{jsxref("Object")}} ou {{jsxref("null")}}.
+
+## Exemples
+
+### Utiliser `extends`
+
+Ce fragment de code est tiré de [cet exemple](https://github.com/GoogleChrome/samples/blob/gh-pages/classes-es6/index.html) et crée une classe `Carré` qui hérite de `Polygone` :
+
+```js
+class Carré extends Polygone {
+  constructor(longueur) {
+    // On utilise le constructeur de la classe parente
+    // avec le mot-clé super
+    super(longueur, longueur);
+    // Pour les classes dérivées, super() doit être appelé avant de
+    // pouvoir utiliser 'this' sinon cela provoque une exception
+    // ReferenceError
+    this.nom = "Carré";
+  }
+
+  get aire() {
+    return this.hauteur * this.largeur;
+  }
+}
+```
+
+### Utiliser `extends` avec des objets natifs
+
+Dans l'exemple suivant, on crée l'équivalent d'une sous-classe pour {{jsxref("Date")}} :
+
+```js
+class maDate extends Date {
+  constructor() {
+    super();
+  }
+
+  getFormattedDate() {
+    var mois = [
+      "Jan",
+      "Fév",
+      "Mar",
+      "Avr",
+      "Mai",
+      "Juin",
+      "Juil",
+      "Août",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Déc",
+    ];
+    return (
+      this.getDate() + "-" + mois[this.getMonth()] + "-" + this.getFullYear()
+    );
+  }
+}
+```
+
+Ces exemples sont extraits de ces deux pages : [démonstration](https://googlechrome.github.io/samples/classes-es6/index.html), [source](https://github.com/GoogleChrome/samples/blob/gh-pages/classes-es6/index.html).
+
+### Étendre `null`
+
+Étendre {{jsxref("null")}} se fait comme avec une classe normale sauf que l'objet prototype n'hérite pas de {{jsxref("Object.prototype")}}.
+
+```js
+class extensionNull extends null {
+  constructor() {}
+}
+
+Object.getPrototypeOf(extensionNull); // Function.prototype
+Object.getPrototypeOf(extensionNull.prototype); // null
+
+new extensionNull(); // ReferenceError
+```
+
+## Spécifications
+
+{{Specifications}}
+
+## Compatibilité des navigateurs
+
+{{Compat}}
+
+## Voir aussi
+
+- [Les classes](/fr/docs/Web/JavaScript/Reference/Classes)
+- [`super`](/fr/docs/Web/JavaScript/Reference/Operators/super)

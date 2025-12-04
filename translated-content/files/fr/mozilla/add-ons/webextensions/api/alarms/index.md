@@ -1,0 +1,43 @@
+---
+title: alarms
+slug: Mozilla/Add-ons/WebExtensions/API/alarms
+---
+
+{{AddonSidebar}}
+
+Programmer le code pour qu'il soit exécuté à un moment précis dans le futur. C'est comme [`setTimeout()`](/fr/docs/Web/API/Window/setTimeout) and [`setInterval()`](/fr/docs/Web/API/Window/setInterval) sauf que ces fonctions ne fonctionnent pas avec les pages d'arrière-plan qui sont chargées à la demande. Les alarmes ne persistent pas d'une session à l'autre du navigateur
+
+Pour pouvoir utiliser cette API, vous devez disposer de la [permission](/fr/docs/Mozilla/Add-ons/WebExtensions/manifest.json/permissions) `"alarms"`.
+
+## Types
+
+- {{WebExtAPIRef("alarms.Alarm")}}
+  - : Ce type permet d'obtenir des informations à propos d'une alarme donnée.
+
+## Méthodes
+
+- {{WebExtAPIRef("alarms.create()")}}
+  - : Cette fonction permet de créer une nouvelle alarme.
+- {{WebExtAPIRef("alarms.get()")}}
+  - : Cette fonction permet de récupérer une alarme donnée en fonction de son nom.
+- {{WebExtAPIRef("alarms.getAll()")}}
+  - : Cette fonction permet de récupérer l'ensemble des alarmes qui sont planifiées.
+- {{WebExtAPIRef("alarms.clear()")}}
+  - : Cette fonction permet de supprimer une alarme donnée en fonction de son nom.
+- {{WebExtAPIRef("alarms.clearAll()")}}
+  - : Cette fonction permet de supprimer l'ensemble des alarmes qui sont planifiées.
+
+## Évènements
+
+- {{WebExtAPIRef("alarms.onAlarm")}}
+  - : Cet évènement est déclenché lorsque l'alarme s'éteint.
+
+{{WebExtExamples("h2")}}
+
+## Compatibilité des navigateurs
+
+{{Compat}}
+
+> [!NOTE]
+>
+> Cette API est basée sur l'API Chromium [`chrome.alarms`](https://developer.chrome.com/docs/extensions/reference/api/alarms).

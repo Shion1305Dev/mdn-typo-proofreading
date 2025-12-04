@@ -1,0 +1,50 @@
+---
+title: TypedArray.prototype.buffer
+slug: Web/JavaScript/Reference/Global_Objects/TypedArray/buffer
+---
+
+{{JSRef}}
+
+La propriété **`buffer`** est un accesseur représentant l'{{jsxref("ArrayBuffer")}} représenté par le _TypedArray_ lors de la construction de l'objet.
+
+{{InteractiveExample("JavaScript Demo: TypedArray.buffer")}}
+
+```js interactive-example
+// Create an ArrayBuffer with a size in bytes
+const buffer = new ArrayBuffer(8);
+const uint16 = new Uint16Array(buffer);
+
+console.log(uint16.buffer.byteLength);
+// Expected output: 8
+```
+
+## Syntaxe
+
+```js
+typedArray.buffer;
+```
+
+## Description
+
+La propriété `buffer` est un accesseur dont le mutateur correspondant vaut `undefined`. Cela signifie que cette propriété n'est accessible qu'en lecture seule. La valeur de la propriété est déterminée lors de la construction du _TypedArray_ et ne peut pas être modifiée. _TypedArray_ est un des objets [TypedArray](/fr/docs/Web/JavaScript/Reference/Global_Objects/TypedArray#les_objets_typedarray).
+
+## Exemples
+
+```js
+var buffer = new ArrayBuffer(8);
+var uint16 = new Uint16Array(buffer);
+uint16.buffer; // ArrayBuffer { byteLength: 8 }
+```
+
+## Spécifications
+
+{{Specifications}}
+
+## Compatibilité des navigateurs
+
+{{Compat}}
+
+## Voir aussi
+
+- [Les tableaux typés en JavaScript](/fr/docs/Web/JavaScript/Guide/Typed_arrays)
+- {{jsxref("TypedArray")}}
