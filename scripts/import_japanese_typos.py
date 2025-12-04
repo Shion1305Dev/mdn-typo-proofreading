@@ -38,7 +38,7 @@ def import_documents(
 
     # Ensure unique index on (file, original, suggestion) when those fields exist.
     coll.create_index(
-        [("file", 1), ("original", 1), ("suggestion", 1)],
+        [("file", 1), ("original", 1), ("suggestion", 1), ("message", 1), ("level", 1)],
         unique=True,
         partialFilterExpression={
             "original": {"$exists": True},
@@ -62,6 +62,10 @@ def import_documents(
             continue
 
         doc = dict(raw)
+        # if either original or suggestion is missing, skip
+        if "original" not in doc or "suggestion" not in doc:
+            continue
+
         _normalize_file_path(doc)
 
         # Timestamps
