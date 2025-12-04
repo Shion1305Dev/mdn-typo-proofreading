@@ -13,6 +13,7 @@ TARGET_OWNER = "Shion1305"
 TARGET_REPO = "mdn-typo-proofreading"
 # By default, link directly to this repository, under the translated-content directory.
 DEFAULT_SOURCE_REPO_URL = f"https://github.com/{TARGET_OWNER}/{TARGET_REPO}"
+DEFAULT_SOURCE_COMMIT = "d193dc2b46c2755211dd1a95563c72a11905b416"
 DEFAULT_SOURCE_PATH_PREFIX = "translated-content"
 
 
@@ -21,6 +22,7 @@ def _find_line_and_url(
     rel_path: str,
     original: str,
     source_repo_url: str,
+    source_commit: str,
     source_path_prefix: str,
     context_radius: int = 2,
 ) -> Tuple[Optional[int], Optional[str], Optional[str]]:
@@ -49,7 +51,8 @@ def _find_line_and_url(
     # Link to this repository, including the translated-content/ prefix by default.
     path_prefix = source_path_prefix.strip("/")
     url_path = f"{path_prefix}/{rel_path}" if path_prefix else rel_path
-    url = f"{source_repo_url}/blob/main/{url_path}#L{start}-L{end}"
+    commit = source_commit or "main"
+    url = f"{source_repo_url}/blob/{commit}/{url_path}#L{start}-L{end}"
     return line_no, url, line_text
 
 
@@ -175,6 +178,7 @@ def _create_issue_for_doc(
     repo: str,
     repo_root: Path,
     source_repo_url: str,
+    source_commit: str,
     source_path_prefix: str,
     doc: MutableMapping[str, object],
 ) -> Optional[int]:
@@ -188,7 +192,12 @@ def _create_issue_for_doc(
         return None
 
     line_no, url, line_text = _find_line_and_url(
-        repo_root, file_path, original, source_repo_url, source_path_prefix
+        repo_root,
+        file_path,
+        original,
+        source_repo_url,
+        source_commit,
+        source_path_prefix,
     )
 
     labels = _labels_for_doc(doc)
@@ -251,6 +260,11 @@ def main() -> None:
         help="Base GitHub URL for the source content repo (default: %(default)s)",
     )
     parser.add_argument(
+        "--source-commit",
+        default=DEFAULT_SOURCE_COMMIT,
+        help="Git commit hash or ref to use in blob URLs (default: %(default)s)",
+    )
+    parser.add_argument(
         "--source-path-prefix",
         default=DEFAULT_SOURCE_PATH_PREFIX,
         help="Path prefix inside the source repo for translated content (default: %(default)s)",
@@ -286,6 +300,7 @@ def main() -> None:
             repo=TARGET_REPO,
             repo_root=args.repo_root,
             source_repo_url=args.source_repo_url,
+            source_commit=args.source_commit,
             source_path_prefix=args.source_path_prefix,
             doc=doc,
         )
