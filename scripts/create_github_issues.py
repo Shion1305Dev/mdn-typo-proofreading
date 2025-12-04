@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 
 GITHUB_API_BASE = "https://api.github.com"
-TARGET_OWNER = "Shion1305"
+TARGET_OWNER = "Shion1305Dev"
 TARGET_REPO = "mdn-typo-proofreading"
 # By default, link directly to this repository, under the translated-content directory.
 DEFAULT_SOURCE_REPO_URL = f"https://github.com/{TARGET_OWNER}/{TARGET_REPO}"

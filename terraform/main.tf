@@ -8,7 +8,7 @@ terraform {
 }
 
 provider "github" {
-  owner = "Shion1305"
+  owner = "Shion1305Dev"
 }
 
 resource "github_repository" "repo" {
