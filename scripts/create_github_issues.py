@@ -20,10 +20,10 @@ def _find_line_and_url(
     original: str,
     source_repo_url: str,
     context_radius: int = 2,
-) -> Tuple[Optional[int], Optional[str]]:
+) -> Tuple[Optional[int], Optional[str], Optional[str]]:
     file_path = repo_root / rel_path
     if not file_path.is_file():
-        return None, None
+        return None, None, None
 
     try:
         text = file_path.read_text(encoding="utf-8")
@@ -36,14 +36,15 @@ def _find_line_and_url(
     ]
 
     if not matches:
-        return None, None
+        return None, None, None
 
     line_no = matches[0]
+    line_text = lines[line_no - 1]
     start = max(1, line_no - context_radius)
     end = min(len(lines), line_no + context_radius)
 
     url = f"{source_repo_url}/blob/main/{rel_path}#L{start}-L{end}"
-    return line_no, url
+    return line_no, url, line_text
 
 
 def _labels_for_doc(doc: Mapping[str, object]) -> Set[str]:
@@ -94,11 +95,16 @@ def _build_issue_body(
     doc: Mapping[str, object],
     url: Optional[str],
     line_no: Optional[int],
+    line_text: Optional[str],
+    original: str,
+    suggestion: str,
 ) -> str:
     parts: List[str] = []
 
     parts.append("### Metadata")
     parts.append("")
+    parts.append("| key | value |")
+    parts.append("| --- | ----- |")
     meta_fields = [
         "file",
         "chunk_index",
@@ -111,10 +117,10 @@ def _build_issue_body(
     ]
     for key in meta_fields:
         if key in doc:
-            parts.append(f"- **{key}**: `{doc[key]}`")
+            parts.append(f"| {key} | `{doc[key]}` |")
 
     if line_no is not None:
-        parts.append(f"- **line**: `{line_no}`")
+        parts.append(f"| line | `{line_no}` |")
 
     parts.append("")
     parts.append("### Location")
@@ -124,14 +130,34 @@ def _build_issue_body(
     else:
         parts.append("- Source: (could not determine location)")
 
+    # If we couldn't locate the line in the source file, don't show a diff.
+    if line_text is None or line_no is None:
+        parts.append("")
+        parts.append(
+            "> Note: Could not automatically locate the original text in the source file; "
+            "please adjust manually."
+        )
+        return "\n".join(parts)
+
     parts.append("")
     parts.append("### Suggestion diff")
     parts.append("")
-    original = str(doc.get("original") or "")
-    suggestion = str(doc.get("suggestion") or "")
+
+    # Build an actual line-level diff using the source line.
+    old_line = line_text
+    if original and original in line_text:
+        new_line = line_text.replace(original, suggestion, 1)
+    else:
+        new_line = None
+
     parts.append("```diff")
-    parts.append(f"- {original}")
-    parts.append(f"+ {suggestion}")
+    if new_line is not None:
+        parts.append(f"- {old_line}")
+        parts.append(f"+ {new_line}")
+    else:
+        # Fallback to simple original/suggestion diff if replacement isn't possible.
+        parts.append(f"- {original}")
+        parts.append(f"+ {suggestion}")
     parts.append("```")
 
     return "\n".join(parts)
@@ -154,13 +180,22 @@ def _create_issue_for_doc(
     ):
         return None
 
-    line_no, url = _find_line_and_url(repo_root, file_path, original, source_repo_url)
+    line_no, url, line_text = _find_line_and_url(
+        repo_root, file_path, original, source_repo_url
+    )
 
     labels = _labels_for_doc(doc)
     _ensure_labels(session, owner, repo, labels)
 
     title = _build_issue_title(doc)
-    body = _build_issue_body(doc, url, line_no)
+    body = _build_issue_body(
+        doc=doc,
+        url=url,
+        line_no=line_no,
+        line_text=line_text,
+        original=str(original),
+        suggestion=str(suggestion),
+    )
 
     resp = session.post(
         f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues",
@@ -231,7 +266,6 @@ def main() -> None:
 
     # Process in a stable order by file path so related suggestions group together.
     pending_docs = coll.find({"issue_number": {"$exists": False}}).sort("file", 1)
-
     created = 0
     for doc in pending_docs:
         issue_number = _create_issue_for_doc(
