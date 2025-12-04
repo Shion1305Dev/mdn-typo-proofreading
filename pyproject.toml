@@ -6,11 +6,13 @@ readme = ""
 requires-python = ">=3.10"
 dependencies = [
     "pymongo>=4.9.0",
+    "requests>=2.32.0",
+    "python-dotenv>=1.0.1",
 ]
 
 [project.scripts]
 import-japanese-typos = "mdn_typer.import_japanese_typos:main"
+create-github-issues = "mdn_typer.create_github_issues:main"
 
 [tool.uv]
 package = true
-
