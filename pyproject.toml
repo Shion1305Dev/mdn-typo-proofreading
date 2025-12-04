@@ -2,7 +2,6 @@
 name = "mdn-typo-proofreading"
 version = "0.1.0"
 description = "Utilities for loading MDN Japanese typo suggestions into MongoDB."
-readme = ""
 requires-python = ">=3.10"
 dependencies = [
     "pymongo>=4.9.0",
@@ -13,6 +12,13 @@ dependencies = [
 [project.scripts]
 import-japanese-typos = "scripts.import_japanese_typos:main"
 create-github-issues = "scripts.create_github_issues:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
 
 [tool.uv]
 package = true
