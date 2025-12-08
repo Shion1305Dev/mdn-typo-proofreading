@@ -2,3 +2,8 @@ data
 .env*
 .idea
 **/*.pyc
+__pycache__/
+.pytest_cache/
+htmlcov/
+.coverage
+*.egg-info/
