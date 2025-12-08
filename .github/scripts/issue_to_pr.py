@@ -183,9 +183,15 @@ def build_prompt(
 
 def normalize_diff(raw_diff: str) -> str:
     """Normalize a diff string by removing code fences and extra whitespace."""
-    # Remove markdown code fences
-    cleaned = re.sub(r"```(?:diff)?\n?", "", raw_diff)
+    if not raw_diff:
+        return ""
+
+    # Remove markdown code fences (both opening and closing)
+    # Handle ```diff or ``` at the start and ``` at the end
+    cleaned = re.sub(r"^```(?:diff)?\s*\n", "", raw_diff)
+    cleaned = re.sub(r"\n```\s*$", "", cleaned)
     cleaned = cleaned.strip()
+
     return cleaned
 
 
@@ -219,9 +225,15 @@ def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
             input=diff_content.encode("utf-8"),
             cwd=workdir,
             capture_output=True,
+            text=True,
             timeout=30,
         )
         if result.returncode != 0:
+            log(f"Git apply failed with return code {result.returncode}", "WARN")
+            if result.stderr:
+                log(f"Git apply stderr: {result.stderr}", "WARN")
+            if result.stdout:
+                log(f"Git apply stdout: {result.stdout}", "WARN")
             return None
 
         # Get hash of the resulting working tree state
@@ -235,6 +247,7 @@ def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
         )
 
         if diff_result.returncode != 0:
+            log(f"Git diff HEAD failed with return code {diff_result.returncode}", "ERROR")
             return None
 
         # Compute hash of the diff output (this represents the final state)
@@ -272,19 +285,24 @@ def _generate_single_diff(
     """
     try:
         log(f"Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
+
+        # Generate response from Ollama
         raw_response = ollama.generate(prompt)
-        log(f"--- Raw response (attempt {attempt_number}) ---")
-        log(raw_response)
-        log(f"--- End of raw response (attempt {attempt_number}) ---")
+        log(f"Attempt {attempt_number}: Raw response length: {len(raw_response)} chars")
+
+        # Normalize the diff
         candidate = normalize_diff(raw_response)
-        log(f"Attempt {attempt_number}: Normalized diff content length: {len(candidate)}")
+        log(f"Attempt {attempt_number}: Normalized diff length: {len(candidate)} chars")
+
+        if not candidate:
+            log(f"Attempt {attempt_number}: Empty normalized diff, skipping.", "WARN")
+            log(f"Raw response was: {raw_response[:200]}...")
+            return attempt_number, None, None
+
+        # Show the normalized diff
         log(f"--- Normalized diff (attempt {attempt_number}) ---")
         log(candidate)
         log(f"--- End of normalized diff (attempt {attempt_number}) ---")
-
-        if not candidate:
-            log(f"Attempt {attempt_number}: Empty response, skipping.", "WARN")
-            return attempt_number, None, None
 
         # Check if diff applies and compute result hash
         result_hash = compute_result_hash(candidate, workdir)
@@ -292,16 +310,14 @@ def _generate_single_diff(
             log(f"Attempt {attempt_number}: Diff does not apply cleanly, skipping.", "WARN")
             return attempt_number, None, None
 
-        log(f"Attempt {attempt_number}: Valid diff generated.")
-        log(f"--- Diff content (attempt {attempt_number}) ---")
-        log(candidate)
-        log(f"--- End of diff (attempt {attempt_number}) ---")
-        log(f"Result hash: {result_hash[:16]}...")
+        log(f"Attempt {attempt_number}: Valid diff generated! Hash: {result_hash[:16]}...", "SUCCESS")
 
         return attempt_number, candidate, result_hash
 
     except Exception as e:
         log(f"Attempt {attempt_number}: Error: {e}", "ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
         return attempt_number, None, None
 
 
@@ -332,12 +348,17 @@ def generate_stable_diff(
         for future in as_completed(futures):
             attempt_number, diff_content, result_hash = future.result()
             log(f"Attempt {attempt_number} completed.")
-            log("--------------------------------------------------")
-            log(f"Diff Content:\n{diff_content}")
-            log("--------------------------------------------------")
-            log(f"Result Hash: {result_hash}")
+
             if diff_content is None or result_hash is None:
+                log(f"Attempt {attempt_number}: Skipping (invalid diff or hash)", "WARN")
                 continue
+
+            log("=" * 60)
+            log(f"Valid result from attempt {attempt_number}:")
+            log(f"Diff Content ({len(diff_content)} chars):")
+            log(diff_content)
+            log(f"Result Hash: {result_hash}")
+            log("=" * 60)
 
             # Check if this result matches any previous result
             for prev_attempt, _prev_diff, prev_hash in valid_results:
