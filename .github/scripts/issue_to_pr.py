@@ -4,6 +4,7 @@ Generate a diff from MongoDB suggestions + GitHub issue comments,
 apply it to translated-content, and create/update a PR.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -196,17 +197,71 @@ def check_diff_applies(diff_content: str, workdir: Path) -> bool:
         return False
 
 
+def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
+    """
+    Apply diff temporarily and compute hash of resulting state.
+    Restores working tree after computing hash.
+
+    Returns:
+        Hash of the resulting state, or None if application fails.
+    """
+    try:
+        # Apply the diff
+        result = subprocess.run(
+            ["git", "apply"],
+            input=diff_content.encode("utf-8"),
+            cwd=workdir,
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+
+        # Get hash of the resulting working tree state
+        # Using git diff to capture all changes, then hash that
+        diff_result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        if diff_result.returncode != 0:
+            return None
+
+        # Compute hash of the diff output (this represents the final state)
+        result_hash = hashlib.sha256(diff_result.stdout.encode("utf-8")).hexdigest()
+
+        return result_hash
+
+    except Exception as e:
+        print(f"    Error computing result hash: {e}")
+        return None
+    finally:
+        # Always restore working tree to original state
+        try:
+            subprocess.run(
+                ["git", "restore", "."],
+                cwd=workdir,
+                capture_output=True,
+                timeout=30,
+            )
+        except Exception:
+            pass
+
+
 def _generate_single_diff(
     attempt_number: int,
     ollama: OllamaClient,
     prompt: str,
     workdir: Path,
-) -> Tuple[int, Optional[str]]:
+) -> Tuple[int, Optional[str], Optional[str]]:
     """
     Generate a single diff attempt.
 
     Returns:
-        (attempt_number, diff_content or None)
+        (attempt_number, diff_content or None, result_hash or None)
     """
     try:
         print(f"  Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
@@ -216,23 +271,25 @@ def _generate_single_diff(
 
         if not candidate:
             print(f"    Attempt {attempt_number}: Empty response, skipping.")
-            return attempt_number, None
+            return attempt_number, None, None
 
-        # Check if diff applies
-        if not check_diff_applies(candidate, workdir):
+        # Check if diff applies and compute result hash
+        result_hash = compute_result_hash(candidate, workdir)
+        if result_hash is None:
             print(f"    Attempt {attempt_number}: Diff does not apply cleanly, skipping.")
-            return attempt_number, None
+            return attempt_number, None, None
 
         print(f"    Attempt {attempt_number}: Valid diff generated.")
         print(f"    --- Diff content (attempt {attempt_number}) ---")
         print(candidate)
         print(f"    --- End of diff (attempt {attempt_number}) ---")
+        print(f"    Result hash: {result_hash[:16]}...")
 
-        return attempt_number, candidate
+        return attempt_number, candidate, result_hash
 
     except Exception as e:
         print(f"    Attempt {attempt_number}: Error: {e}")
-        return attempt_number, None
+        return attempt_number, None, None
 
 
 def generate_stable_diff(
@@ -241,12 +298,13 @@ def generate_stable_diff(
     workdir: Path,
 ) -> Tuple[Optional[str], int, Optional[int], Optional[int]]:
     """
-    Generate diffs in parallel with stability requirement: 2 identical diffs.
+    Generate diffs in parallel with stability requirement: 2 identical results.
 
     Returns:
         (diff, total_attempts, stable_attempt_1, stable_attempt_2)
     """
-    valid_diffs: List[Tuple[int, str]] = []  # List of (attempt_number, diff_content)
+    # List of (attempt_number, diff_content, result_hash)
+    valid_results: List[Tuple[int, str, str]] = []
 
     # Run all attempts in parallel
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -258,18 +316,18 @@ def generate_stable_diff(
 
         # Process results as they complete
         for future in as_completed(futures):
-            attempt_number, diff_content = future.result()
+            attempt_number, diff_content, result_hash = future.result()
 
-            if diff_content is None:
+            if diff_content is None or result_hash is None:
                 continue
 
-            # Check if this diff matches any previous valid diff
-            for prev_attempt, prev_diff in valid_diffs:
-                if diff_content == prev_diff:
+            # Check if this result matches any previous result
+            for prev_attempt, prev_diff, prev_hash in valid_results:
+                if result_hash == prev_hash:
                     # Found a match!
                     first_attempt = min(prev_attempt, attempt_number)
                     second_attempt = max(prev_attempt, attempt_number)
-                    print(f"    STABLE: Attempts {first_attempt} and {second_attempt} produced identical diffs.")
+                    print(f"    STABLE: Attempts {first_attempt} and {second_attempt} produced identical results.")
 
                     # Cancel remaining futures to stop unnecessary work
                     for f in futures:
@@ -279,11 +337,11 @@ def generate_stable_diff(
                     return diff_content, second_attempt, first_attempt, second_attempt
 
             # No match found, add to list and continue
-            valid_diffs.append((attempt_number, diff_content))
-            print(f"    Attempt {attempt_number}: New unique diff, continuing...")
+            valid_results.append((attempt_number, diff_content, result_hash))
+            print(f"    Attempt {attempt_number}: New unique result, continuing...")
 
     # Exhausted all attempts without finding stability
-    print(f"  Completed all {MAX_ATTEMPTS} attempts without finding matching diffs.")
+    print(f"  Completed all {MAX_ATTEMPTS} attempts without finding matching results.")
     return None, MAX_ATTEMPTS, None, None
 
 
