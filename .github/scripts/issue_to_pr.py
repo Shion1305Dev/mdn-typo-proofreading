@@ -443,8 +443,12 @@ def generate_stable_diff(
 def apply_diff(diff_content: str, workdir: Path) -> bool:
     """Apply a diff to the working directory."""
     try:
+        log("Attempting to apply diff with git apply...")
+        log(f"Working directory: {workdir}")
+        log(f"Diff content preview (first 500 chars):\n{diff_content[:500]}")
+
         result = subprocess.run(
-            ["git", "apply"],
+            ["git", "apply", "--verbose"],
             input=diff_content.encode("utf-8"),
             cwd=workdir,
             capture_output=True,
@@ -456,7 +460,22 @@ def apply_diff(diff_content: str, workdir: Path) -> bool:
                 log(f"Git apply stderr: {result.stderr.decode('utf-8', errors='replace')}", "ERROR")
             if result.stdout:
                 log(f"Git apply stdout: {result.stdout.decode('utf-8', errors='replace')}", "ERROR")
+
+            # Try with --check to get more diagnostic info
+            log("Running git apply --check for diagnostics...")
+            check_result = subprocess.run(
+                ["git", "apply", "--check", "--verbose"],
+                input=diff_content.encode("utf-8"),
+                cwd=workdir,
+                capture_output=True,
+                timeout=30,
+            )
+            if check_result.stderr:
+                log(f"Git apply --check stderr: {check_result.stderr.decode('utf-8', errors='replace')}", "ERROR")
+
             return False
+
+        log("Diff applied successfully!", "SUCCESS")
         return True
     except Exception as e:
         log(f"Exception while applying diff: {e}", "ERROR")
@@ -479,16 +498,8 @@ def git_has_changes(workdir: Path) -> bool:
 def git_commit(
     workdir: Path,
     message: str,
-    author_name: str = "GitHub Actions Bot",
-    author_email: str = "actions@github.com",
 ) -> None:
-    """Create a git commit."""
-    env = os.environ.copy()
-    env["GIT_AUTHOR_NAME"] = author_name
-    env["GIT_AUTHOR_EMAIL"] = author_email
-    env["GIT_COMMITTER_NAME"] = author_name
-    env["GIT_COMMITTER_EMAIL"] = author_email
-
+    """Create a git commit using default git configuration."""
     subprocess.run(
         ["git", "add", "-A"],
         cwd=workdir,
@@ -497,7 +508,6 @@ def git_commit(
     subprocess.run(
         ["git", "commit", "-m", message],
         cwd=workdir,
-        env=env,
         check=True,
     )
 
