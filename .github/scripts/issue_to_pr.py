@@ -21,7 +21,7 @@ from pymongo import MongoClient
 
 # Constants
 MONGO_COLLECTION = "japanese_typos_suggestions"
-MAX_ATTEMPTS = 10
+MAX_ATTEMPTS = 2
 GITHUB_API_BASE = "https://api.github.com"
 
 
