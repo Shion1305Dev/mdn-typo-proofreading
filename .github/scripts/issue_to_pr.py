@@ -309,6 +309,7 @@ def generate_stable_diff(
     Returns:
         (diff, total_attempts, stable_attempt_1, stable_attempt_2)
     """
+    log(f"Prompt: {prompt}")
     # List of (attempt_number, diff_content, result_hash)
     valid_results: List[Tuple[int, str, str]] = []
 
