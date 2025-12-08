@@ -217,15 +217,23 @@ def generate_diff_from_suggestions(
         return ""
 
     # Generate unified diff
-    diff = difflib.unified_diff(
-        file_content.splitlines(keepends=True),
-        modified_content.splitlines(keepends=True),
+    # Split into lines without keeping ends first, let difflib handle line endings
+    original_lines = file_content.splitlines(keepends=False)
+    modified_lines = modified_content.splitlines(keepends=False)
+
+    diff_lines = list(difflib.unified_diff(
+        original_lines,
+        modified_lines,
         fromfile=f"a/{file_path}",
         tofile=f"b/{file_path}",
         lineterm="",
-    )
+    ))
 
-    return "".join(diff)
+    if not diff_lines:
+        return ""
+
+    # Join with newlines to create proper diff format
+    return "\n".join(diff_lines) + "\n"
 
 
 def normalize_diff(raw_diff: str) -> str:
@@ -629,6 +637,12 @@ def main() -> None:
     # Try generating diff directly from suggestions first
     log("Generating diff from suggestions...")
     diff = generate_diff_from_suggestions(file_path, file_content, suggestions)
+
+    if diff:
+        log(f"Generated diff ({len(diff)} chars):")
+        log("=" * 60)
+        log(diff)
+        log("=" * 60)
 
     total_attempts = 0
     stable_1 = None

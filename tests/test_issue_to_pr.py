@@ -155,6 +155,65 @@ class TestGenerateDiffFromSuggestions:
         assert "-アクセスをアクセスを提供する。" in result
         assert "+アクセスを提供する。" in result
 
+    def test_generated_diff_can_be_applied_by_git(self):
+        """Should generate a diff that git can apply."""
+        import tempfile
+        import subprocess
+
+        file_path = "test.txt"
+        original_content = "Line 1\nOld text here\nLine 3\n"
+        suggestions = [
+            {"original": "Old text", "suggestion": "New text"},
+        ]
+
+        diff = generate_diff_from_suggestions(file_path, original_content, suggestions)
+
+        # Create a temporary git repo
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workdir = Path(tmpdir)
+
+            # Initialize git repo
+            subprocess.run(["git", "init"], cwd=workdir, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "config", "user.name", "Test"],
+                cwd=workdir,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "test@test.com"],
+                cwd=workdir,
+                check=True,
+                capture_output=True,
+            )
+
+            # Create and commit the original file
+            test_file = workdir / file_path
+            test_file.write_text(original_content)
+            subprocess.run(["git", "add", "."], cwd=workdir, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "commit", "-m", "Initial"],
+                cwd=workdir,
+                check=True,
+                capture_output=True,
+            )
+
+            # Try to apply the diff
+            result = subprocess.run(
+                ["git", "apply"],
+                input=diff.encode("utf-8"),
+                cwd=workdir,
+                capture_output=True,
+            )
+
+            # Should succeed
+            assert result.returncode == 0, f"git apply failed: {result.stderr.decode()}"
+
+            # Verify the change was applied
+            new_content = test_file.read_text()
+            assert "New text here" in new_content
+            assert "Old text" not in new_content
+
 
 class TestComputeResultHash:
     """Tests for the compute_result_hash function."""
