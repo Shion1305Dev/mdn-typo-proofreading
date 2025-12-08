@@ -1,0 +1,55 @@
+name: Issue Draft to Doc PR
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  create-or-update-pr:
+    if: github.event.label.name == 'draft'
+    runs-on: self-hosted
+
+    concurrency:
+      group: issue-draft-pr
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout issue repo
+        uses: actions/checkout@v4
+        with:
+          path: issue-repo
+
+      - name: Checkout docs repo
+        uses: actions/checkout@v4
+        with:
+          repository: Shion1305/translated-content
+          path: docs-repo
+          token: ${{ secrets.DOC_REPO_PAT }}
+          fetch-depth: 0
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Install dependencies with uv
+        working-directory: issue-repo
+        run: uv sync
+
+      - name: Generate diff and create/update PR
+        working-directory: issue-repo
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_REPO: ${{ github.repository }}
+          DOC_REPO: Shion1305/translated-content
+          DOC_REPO_DEFAULT_BRANCH: main
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGO_DB: mdn_proofreading
+          OLLAMA_ENDPOINT: http://localhost:11434
+          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
+          GH_PAT: ${{ secrets.DOC_REPO_PAT }}
+          DOCS_WORKDIR: ${{ github.workspace }}/docs-repo
+        run: uv run .github/scripts/issue_to_pr.py
