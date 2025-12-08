@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -22,6 +23,12 @@ from pymongo import MongoClient
 MONGO_COLLECTION = "japanese_typos_suggestions"
 MAX_ATTEMPTS = 10
 GITHUB_API_BASE = "https://api.github.com"
+
+
+def log(message: str, level: str = "INFO") -> None:
+    """Print log message with timestamp."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    print(f"[{timestamp}] [{level}] {message}", flush=True)
 
 
 class GitHubAPI:
@@ -236,7 +243,7 @@ def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
         return result_hash
 
     except Exception as e:
-        print(f"    Error computing result hash: {e}")
+        log(f"Error computing result hash: {e}", "ERROR")
         return None
     finally:
         # Always restore working tree to original state
@@ -247,8 +254,8 @@ def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
                 capture_output=True,
                 timeout=30,
             )
-        except Exception:
-            pass
+        except Exception as restore_error:
+            log(f"Warning: Failed to restore working tree: {restore_error}", "WARN")
 
 
 def _generate_single_diff(
@@ -264,31 +271,30 @@ def _generate_single_diff(
         (attempt_number, diff_content or None, result_hash or None)
     """
     try:
-        print(f"  Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
-
+        log(f"Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
         raw_response = ollama.generate(prompt)
         candidate = normalize_diff(raw_response)
 
         if not candidate:
-            print(f"    Attempt {attempt_number}: Empty response, skipping.")
+            log(f"Attempt {attempt_number}: Empty response, skipping.", "WARN")
             return attempt_number, None, None
 
         # Check if diff applies and compute result hash
         result_hash = compute_result_hash(candidate, workdir)
         if result_hash is None:
-            print(f"    Attempt {attempt_number}: Diff does not apply cleanly, skipping.")
+            log(f"Attempt {attempt_number}: Diff does not apply cleanly, skipping.", "WARN")
             return attempt_number, None, None
 
-        print(f"    Attempt {attempt_number}: Valid diff generated.")
-        print(f"    --- Diff content (attempt {attempt_number}) ---")
-        print(candidate)
-        print(f"    --- End of diff (attempt {attempt_number}) ---")
-        print(f"    Result hash: {result_hash[:16]}...")
+        log(f"Attempt {attempt_number}: Valid diff generated.")
+        log(f"--- Diff content (attempt {attempt_number}) ---")
+        log(candidate)
+        log(f"--- End of diff (attempt {attempt_number}) ---")
+        log(f"Result hash: {result_hash[:16]}...")
 
         return attempt_number, candidate, result_hash
 
     except Exception as e:
-        print(f"    Attempt {attempt_number}: Error: {e}")
+        log(f"Attempt {attempt_number}: Error: {e}", "ERROR")
         return attempt_number, None, None
 
 
@@ -317,22 +323,21 @@ def generate_stable_diff(
         # Process results as they complete
         for future in as_completed(futures):
             attempt_number, diff_content, result_hash = future.result()
-            print(f"Attempt {attempt_number} completed.")
-            print("--------------------------------------------------")
-            print(f"Diff Content:\n{diff_content}")
-            print("--------------------------------------------------")
-            print(f"Result Hash: {result_hash}")
-
+            log(f"Attempt {attempt_number} completed.")
+            log("--------------------------------------------------")
+            log(f"Diff Content:\n{diff_content}")
+            log("--------------------------------------------------")
+            log(f"Result Hash: {result_hash}")
             if diff_content is None or result_hash is None:
                 continue
 
             # Check if this result matches any previous result
-            for prev_attempt, prev_diff, prev_hash in valid_results:
+            for prev_attempt, _prev_diff, prev_hash in valid_results:
                 if result_hash == prev_hash:
                     # Found a match!
                     first_attempt = min(prev_attempt, attempt_number)
                     second_attempt = max(prev_attempt, attempt_number)
-                    print(f"    STABLE: Attempts {first_attempt} and {second_attempt} produced identical results.")
+                    log(f"STABLE: Attempts {first_attempt} and {second_attempt} produced identical results.", "SUCCESS")
 
                     # Cancel remaining futures to stop unnecessary work
                     for f in futures:
@@ -343,10 +348,10 @@ def generate_stable_diff(
 
             # No match found, add to list and continue
             valid_results.append((attempt_number, diff_content, result_hash))
-            print(f"    Attempt {attempt_number}: New unique result, continuing...")
+            log(f"Attempt {attempt_number}: New unique result, continuing...")
 
     # Exhausted all attempts without finding stability
-    print(f"  Completed all {MAX_ATTEMPTS} attempts without finding matching results.")
+    log(f"Completed all {MAX_ATTEMPTS} attempts without finding matching results.", "ERROR")
     return None, MAX_ATTEMPTS, None, None
 
 
@@ -358,11 +363,17 @@ def apply_diff(diff_content: str, workdir: Path) -> bool:
             input=diff_content.encode("utf-8"),
             cwd=workdir,
             capture_output=True,
+            text=True,
             timeout=30,
         )
-        return result.returncode == 0
+        if result.returncode != 0:
+            log(f"Failed to apply diff. Git apply returned code {result.returncode}", "ERROR")
+            if result.stderr:
+                log(f"Git apply stderr: {result.stderr}", "ERROR")
+            return False
+        return True
     except Exception as e:
-        print(f"Error applying diff: {e}")
+        log(f"Exception while applying diff: {e}", "ERROR")
         return False
 
 
@@ -474,107 +485,107 @@ def main() -> None:
 
     # Validate inputs
     if not all([issue_number, issue_repo, doc_repo, mongo_uri, ollama_model, gh_pat, docs_workdir]):
-        print("Error: Missing required environment variables.")
+        log("Missing required environment variables.", "ERROR")
         sys.exit(1)
 
     if not docs_workdir.is_dir():
-        print(f"Error: DOCS_WORKDIR does not exist: {docs_workdir}")
+        log(f"DOCS_WORKDIR does not exist: {docs_workdir}", "ERROR")
         sys.exit(1)
 
-    print(f"Processing issue #{issue_number} from {issue_repo}")
+    log(f"Processing issue #{issue_number} from {issue_repo}")
 
     # Initialize clients
     gh = GitHubAPI(gh_pat)
     ollama = OllamaClient(ollama_endpoint, ollama_model)
 
     # Fetch MongoDB suggestions
-    print("Fetching MongoDB suggestions...")
+    log("Fetching MongoDB suggestions...")
     suggestions = fetch_mongo_suggestions(mongo_uri, mongo_db, issue_number)
     if not suggestions:
-        print(f"No suggestions found for issue #{issue_number}")
+        log(f"No suggestions found for issue #{issue_number}", "WARN")
         sys.exit(0)
 
-    print(f"Found {len(suggestions)} suggestions.")
+    log(f"Found {len(suggestions)} suggestions.")
 
     # Extract and validate file path
     file_paths = list(set(s.get("file") for s in suggestions if s.get("file")))
     if len(file_paths) != 1:
-        print(f"Error: Expected exactly 1 file path, found {len(file_paths)}: {file_paths}")
+        log(f"Expected exactly 1 file path, found {len(file_paths)}: {file_paths}", "ERROR")
         sys.exit(1)
 
     file_path = file_paths[0]
-    print(f"Target file: {file_path}")
+    log(f"Target file: {file_path}")
 
     # Fetch issue comments
-    print("Fetching issue comments...")
+    log("Fetching issue comments...")
     comments = gh.get_issue_comments(issue_repo, issue_number)
-    print(f"Found {len(comments)} comments.")
+    log(f"Found {len(comments)} comments.")
 
     # Check for existing PR
-    print("Checking for existing PR...")
+    log("Checking for existing PR...")
     existing_pr = find_existing_pr_for_file(gh, doc_repo, file_path)
 
     if existing_pr:
-        print(f"Found existing PR #{existing_pr['number']}: {existing_pr['html_url']}")
+        log(f"Found existing PR #{existing_pr['number']}: {existing_pr['html_url']}")
         branch_name = existing_pr["head"]["ref"]
         is_new_pr = False
     else:
-        print("No existing PR found. Will create a new one.")
+        log("No existing PR found. Will create a new one.")
         branch_name = f"shion/typo-scan-fix-{issue_number}"
         is_new_pr = True
 
     # Setup branch
-    print(f"Setting up branch: {branch_name}")
+    log(f"Setting up branch: {branch_name}")
     setup_git_branch(docs_workdir, branch_name, doc_repo_default_branch, is_new_pr)
 
     # Read current file content
     target_file = docs_workdir / file_path
     if not target_file.exists():
-        print(f"Error: Target file does not exist: {target_file}")
+        log(f"Target file does not exist: {target_file}", "ERROR")
         sys.exit(1)
 
     file_content = target_file.read_text(encoding="utf-8")
 
     # Build prompt
-    print("Building prompt for Ollama...")
+    log("Building prompt for Ollama...")
     prompt = build_prompt(file_path, file_content, suggestions, comments)
 
     # Generate stable diff
-    print(f"Generating stable diff (max {MAX_ATTEMPTS} attempts)...")
+    log(f"Generating stable diff (max {MAX_ATTEMPTS} attempts)...")
     diff, total_attempts, stable_1, stable_2 = generate_stable_diff(
         ollama, prompt, docs_workdir
     )
 
     if diff is None:
-        print(f"Failed to generate stable diff after {total_attempts} attempts.")
+        log(f"Failed to generate stable diff after {total_attempts} attempts.", "ERROR")
         sys.exit(1)
 
-    print(f"Successfully generated stable diff (attempts {stable_1} and {stable_2} matched).")
+    log(f"Successfully generated stable diff (attempts {stable_1} and {stable_2} matched).", "SUCCESS")
 
     # Apply diff
-    print("Applying diff...")
+    log("Applying diff...")
     if not apply_diff(diff, docs_workdir):
-        print("Error: Failed to apply diff.")
+        log("Failed to apply diff.", "ERROR")
         sys.exit(1)
 
     # Check if there are changes
     if not git_has_changes(docs_workdir):
-        print("No changes after applying diff. Exiting without commit.")
+        log("No changes after applying diff. Exiting without commit.", "WARN")
         sys.exit(0)
 
     # Commit changes
     commit_message = f"✏️ Fix typos ({issue_repo}#{issue_number})"
-    print(f"Committing changes: {commit_message}")
+    log(f"Committing changes: {commit_message}")
     git_commit(docs_workdir, commit_message)
 
     # Push changes
-    print(f"Pushing to {branch_name}...")
+    log(f"Pushing to {branch_name}...")
     git_push(docs_workdir, branch_name)
 
     # Create or update PR
     pr_url = ""
     if is_new_pr:
-        print("Creating new PR...")
+        log("Creating new PR...")
         pr_title = f"{file_path}: typoを修正"
         pr_body = f"""Closes {issue_repo}#{issue_number}
 
@@ -592,17 +603,17 @@ This PR was automatically generated from MongoDB suggestions and issue comments.
             base=doc_repo_default_branch,
         )
         pr_url = pr_data["html_url"]
-        print(f"Created PR: {pr_url}")
+        log(f"Created PR: {pr_url}", "SUCCESS")
     else:
         pr_url = existing_pr["html_url"]
-        print(f"Updated existing PR: {pr_url}")
+        log(f"Updated existing PR: {pr_url}", "SUCCESS")
 
     # Post comment to issue
-    print("Posting comment to issue...")
+    log("Posting comment to issue...")
     comment_body = f"Created PR: {pr_url}"
     gh.create_issue_comment(issue_repo, issue_number, comment_body)
 
-    print("Done!")
+    log("Done!", "SUCCESS")
 
 
 if __name__ == "__main__":
