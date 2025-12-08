@@ -249,7 +249,7 @@ def generate_stable_diff(
     valid_diffs: List[Tuple[int, str]] = []  # List of (attempt_number, diff_content)
 
     # Run all attempts in parallel
-    with ThreadPoolExecutor(max_workers=MAX_ATTEMPTS) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         # Submit all attempts
         futures = {
             executor.submit(_generate_single_diff, attempt, ollama, prompt, workdir): attempt
