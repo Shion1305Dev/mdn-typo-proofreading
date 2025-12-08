@@ -273,7 +273,14 @@ def _generate_single_diff(
     try:
         log(f"Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
         raw_response = ollama.generate(prompt)
+        log(f"--- Raw response (attempt {attempt_number}) ---")
+        log(raw_response)
+        log(f"--- End of raw response (attempt {attempt_number}) ---")
         candidate = normalize_diff(raw_response)
+        log(f"Attempt {attempt_number}: Normalized diff content length: {len(candidate)}")
+        log(f"--- Normalized diff (attempt {attempt_number}) ---")
+        log(candidate)
+        log(f"--- End of normalized diff (attempt {attempt_number}) ---")
 
         if not candidate:
             log(f"Attempt {attempt_number}: Empty response, skipping.", "WARN")
