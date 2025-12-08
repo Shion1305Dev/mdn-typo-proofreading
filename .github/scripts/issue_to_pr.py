@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -195,53 +196,94 @@ def check_diff_applies(diff_content: str, workdir: Path) -> bool:
         return False
 
 
+def _generate_single_diff(
+    attempt_number: int,
+    ollama: OllamaClient,
+    prompt: str,
+    workdir: Path,
+) -> Tuple[int, Optional[str]]:
+    """
+    Generate a single diff attempt.
+
+    Returns:
+        (attempt_number, diff_content or None)
+    """
+    try:
+        print(f"  Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
+
+        raw_response = ollama.generate(prompt)
+        candidate = normalize_diff(raw_response)
+
+        if not candidate:
+            print(f"    Attempt {attempt_number}: Empty response, skipping.")
+            return attempt_number, None
+
+        # Check if diff applies
+        if not check_diff_applies(candidate, workdir):
+            print(f"    Attempt {attempt_number}: Diff does not apply cleanly, skipping.")
+            return attempt_number, None
+
+        print(f"    Attempt {attempt_number}: Valid diff generated.")
+        print(f"    --- Diff content (attempt {attempt_number}) ---")
+        print(candidate)
+        print(f"    --- End of diff (attempt {attempt_number}) ---")
+
+        return attempt_number, candidate
+
+    except Exception as e:
+        print(f"    Attempt {attempt_number}: Error: {e}")
+        return attempt_number, None
+
+
 def generate_stable_diff(
     ollama: OllamaClient,
     prompt: str,
     workdir: Path,
 ) -> Tuple[Optional[str], int, Optional[int], Optional[int]]:
     """
-    Generate a diff with stability requirement: 2 identical diffs in a row.
+    Generate diffs in parallel with stability requirement: 2 identical diffs.
 
     Returns:
         (diff, total_attempts, stable_attempt_1, stable_attempt_2)
     """
-    last_diff: Optional[str] = None
+    valid_diffs: List[Tuple[int, str]] = []  # List of (attempt_number, diff_content)
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        print(f"  Attempt {attempt}/{MAX_ATTEMPTS}...")
+    # Run all attempts in parallel
+    with ThreadPoolExecutor(max_workers=MAX_ATTEMPTS) as executor:
+        # Submit all attempts
+        futures = {
+            executor.submit(_generate_single_diff, attempt, ollama, prompt, workdir): attempt
+            for attempt in range(1, MAX_ATTEMPTS + 1)
+        }
 
-        raw_response = ollama.generate(prompt)
-        candidate = normalize_diff(raw_response)
+        # Process results as they complete
+        for future in as_completed(futures):
+            attempt_number, diff_content = future.result()
 
-        if not candidate:
-            print(f"    Attempt {attempt}: Empty response, skipping.")
-            continue
+            if diff_content is None:
+                continue
 
-        # Check if diff applies
-        if not check_diff_applies(candidate, workdir):
-            print(f"    Attempt {attempt}: Diff does not apply cleanly, skipping.")
-            continue
+            # Check if this diff matches any previous valid diff
+            for prev_attempt, prev_diff in valid_diffs:
+                if diff_content == prev_diff:
+                    # Found a match!
+                    first_attempt = min(prev_attempt, attempt_number)
+                    second_attempt = max(prev_attempt, attempt_number)
+                    print(f"    STABLE: Attempts {first_attempt} and {second_attempt} produced identical diffs.")
 
-        print(f"    Attempt {attempt}: Valid diff generated.")
+                    # Cancel remaining futures to stop unnecessary work
+                    for f in futures:
+                        f.cancel()
 
-        # Compare with last valid diff
-        if last_diff is None:
-            # First valid diff
-            last_diff = candidate
-            print(f"    Attempt {attempt}: First valid diff, continuing...")
-            continue
+                    # Return: (diff, total_attempts_when_stable_found, first_attempt, second_attempt)
+                    return diff_content, second_attempt, first_attempt, second_attempt
 
-        if candidate == last_diff:
-            # Two identical diffs in a row - stable!
-            print(f"    Attempt {attempt}: STABLE (identical to attempt {attempt - 1}).")
-            return candidate, attempt, attempt - 1, attempt
-        else:
-            # Different from last, update and continue
-            print(f"    Attempt {attempt}: Different from previous, updating...")
-            last_diff = candidate
+            # No match found, add to list and continue
+            valid_diffs.append((attempt_number, diff_content))
+            print(f"    Attempt {attempt_number}: New unique diff, continuing...")
 
     # Exhausted all attempts without finding stability
+    print(f"  Completed all {MAX_ATTEMPTS} attempts without finding matching diffs.")
     return None, MAX_ATTEMPTS, None, None
 
 
