@@ -16,7 +16,7 @@ jobs:
 
     concurrency:
       group: issue-draft-pr
-      cancel-in-progress: true
+      cancel-in-progress: false
 
     steps:
       - name: Checkout issue repo
