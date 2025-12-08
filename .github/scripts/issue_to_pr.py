@@ -219,21 +219,20 @@ def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
         Hash of the resulting state, or None if application fails.
     """
     try:
-        # Apply the diff
+        # Apply the diff (use bytes for input, don't use text=True for apply)
         result = subprocess.run(
             ["git", "apply"],
             input=diff_content.encode("utf-8"),
             cwd=workdir,
             capture_output=True,
-            text=True,
             timeout=30,
         )
         if result.returncode != 0:
             log(f"Git apply failed with return code {result.returncode}", "WARN")
             if result.stderr:
-                log(f"Git apply stderr: {result.stderr}", "WARN")
+                log(f"Git apply stderr: {result.stderr.decode('utf-8', errors='replace')}", "WARN")
             if result.stdout:
-                log(f"Git apply stdout: {result.stdout}", "WARN")
+                log(f"Git apply stdout: {result.stdout.decode('utf-8', errors='replace')}", "WARN")
             return None
 
         # Get hash of the resulting working tree state
@@ -257,6 +256,8 @@ def compute_result_hash(diff_content: str, workdir: Path) -> Optional[str]:
 
     except Exception as e:
         log(f"Error computing result hash: {e}", "ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
         return None
     finally:
         # Always restore working tree to original state
@@ -392,17 +393,20 @@ def apply_diff(diff_content: str, workdir: Path) -> bool:
             input=diff_content.encode("utf-8"),
             cwd=workdir,
             capture_output=True,
-            text=True,
             timeout=30,
         )
         if result.returncode != 0:
             log(f"Failed to apply diff. Git apply returned code {result.returncode}", "ERROR")
             if result.stderr:
-                log(f"Git apply stderr: {result.stderr}", "ERROR")
+                log(f"Git apply stderr: {result.stderr.decode('utf-8', errors='replace')}", "ERROR")
+            if result.stdout:
+                log(f"Git apply stdout: {result.stdout.decode('utf-8', errors='replace')}", "ERROR")
             return False
         return True
     except Exception as e:
         log(f"Exception while applying diff: {e}", "ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
         return False
 
 
