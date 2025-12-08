@@ -4,6 +4,7 @@ Generate a diff from MongoDB suggestions + GitHub issue comments,
 apply it to translated-content, and create/update a PR.
 """
 
+import difflib
 import hashlib
 import json
 import os
@@ -171,14 +172,60 @@ def build_prompt(
     lines.append("2. When user feedback conflicts with suggestions, USER FEEDBACK WINS.")
     lines.append("3. Fix only Japanese typos and related textual issues.")
     lines.append("4. Do NOT modify unrelated text.")
-    lines.append("5. Output ONLY a unified diff (git diff / patch format) for the target file.")
+    lines.append("5. Output ONLY a unified diff (git diff format) for the target file.")
     lines.append(f"6. Use the exact file path: {file_path}")
-    lines.append("7. Do NOT include markdown code fences, explanations, or extra text.")
-    lines.append("8. Output ONLY the raw diff content.")
+    lines.append("7. The diff MUST follow this format:")
+    lines.append("   --- a/path/to/file")
+    lines.append("   +++ b/path/to/file")
+    lines.append("   @@ -start,count +start,count @@ optional section header")
+    lines.append("    context line (starts with space)")
+    lines.append("   -removed line (starts with minus)")
+    lines.append("   +added line (starts with plus)")
+    lines.append("    context line (starts with space)")
+    lines.append("8. Include at least 3 lines of context before and after each change.")
+    lines.append("9. Do NOT include markdown code fences, explanations, or extra text.")
+    lines.append("10. Output ONLY the raw diff content.")
     lines.append("")
-    lines.append("Generate the diff now:")
+    lines.append("Generate the unified diff now:")
 
     return "\n".join(lines)
+
+
+def generate_diff_from_suggestions(
+    file_path: str,
+    file_content: str,
+    suggestions: List[Dict[str, Any]],
+) -> str:
+    """
+    Generate a proper unified diff by applying suggestions to file content.
+    This bypasses LLM formatting issues and creates a valid git diff.
+    """
+    # Start with original content
+    modified_content = file_content
+
+    # Apply all suggestions
+    for sug in suggestions:
+        original = sug.get("original", "")
+        suggestion = sug.get("suggestion", "")
+
+        if original and suggestion and original in modified_content:
+            # Replace first occurrence
+            modified_content = modified_content.replace(original, suggestion, 1)
+
+    # If no changes were made, return empty diff
+    if file_content == modified_content:
+        return ""
+
+    # Generate unified diff
+    diff = difflib.unified_diff(
+        file_content.splitlines(keepends=True),
+        modified_content.splitlines(keepends=True),
+        fromfile=f"a/{file_path}",
+        tofile=f"b/{file_path}",
+        lineterm="",
+    )
+
+    return "".join(diff)
 
 
 def normalize_diff(raw_diff: str) -> str:
@@ -579,21 +626,43 @@ def main() -> None:
 
     file_content = target_file.read_text(encoding="utf-8")
 
-    # Build prompt
-    log("Building prompt for Ollama...")
-    prompt = build_prompt(file_path, file_content, suggestions, comments)
+    # Try generating diff directly from suggestions first
+    log("Generating diff from suggestions...")
+    diff = generate_diff_from_suggestions(file_path, file_content, suggestions)
 
-    # Generate stable diff
-    log(f"Generating stable diff (max {MAX_ATTEMPTS} attempts)...")
-    diff, total_attempts, stable_1, stable_2 = generate_stable_diff(
-        ollama, prompt, docs_workdir
-    )
+    total_attempts = 0
+    stable_1 = None
+    stable_2 = None
 
-    if diff is None:
-        log(f"Failed to generate stable diff after {total_attempts} attempts.", "ERROR")
-        sys.exit(1)
+    # If we have user comments, use Ollama to incorporate them
+    if comments and any(not c.get("body", "").startswith("Created PR:") for c in comments):
+        log("User comments found. Using Ollama to incorporate feedback...")
 
-    log(f"Successfully generated stable diff (attempts {stable_1} and {stable_2} matched).", "SUCCESS")
+        # Build prompt
+        log("Building prompt for Ollama...")
+        prompt = build_prompt(file_path, file_content, suggestions, comments)
+
+        # Generate stable diff
+        log(f"Generating stable diff (max {MAX_ATTEMPTS} attempts)...")
+        ollama_diff, total_attempts, stable_1, stable_2 = generate_stable_diff(
+            ollama, prompt, docs_workdir
+        )
+
+        if ollama_diff is not None:
+            log(f"Successfully generated stable diff with Ollama (attempts {stable_1} and {stable_2} matched).", "SUCCESS")
+            diff = ollama_diff
+        else:
+            log(f"Ollama failed after {total_attempts} attempts. Using diff from suggestions only.", "WARN")
+            if not diff:
+                log("No valid diff available.", "ERROR")
+                sys.exit(1)
+    else:
+        log("No user comments found. Using diff generated from suggestions.")
+        if not diff:
+            log("No changes to make based on suggestions.", "WARN")
+            sys.exit(0)
+
+    log(f"Final diff length: {len(diff)} chars")
 
     # Apply diff
     log("Applying diff...")
@@ -620,14 +689,21 @@ def main() -> None:
     if is_new_pr:
         log("Creating new PR...")
         pr_title = f"{file_path}: typoを修正"
-        pr_body = f"""Closes {issue_repo}#{issue_number}
 
-Diff was generated with {total_attempts} attempts. Stable identical diffs were produced on attempts {stable_1} and {stable_2}.
+        # Build PR body based on how diff was generated
+        pr_body_lines = [f"Closes {issue_repo}#{issue_number}", ""]
 
-Model: {ollama_model}
+        if total_attempts > 0:
+            pr_body_lines.append(f"Diff was generated with {total_attempts} Ollama attempts. Stable identical diffs were produced on attempts {stable_1} and {stable_2}.")
+            pr_body_lines.append(f"Model: {ollama_model}")
+        else:
+            pr_body_lines.append("Diff was generated directly from MongoDB suggestions using Python's difflib.")
 
-This PR was automatically generated from MongoDB suggestions and issue comments.
-"""
+        pr_body_lines.append("")
+        pr_body_lines.append("This PR was automatically generated from MongoDB suggestions" + (" and issue comments." if comments else "."))
+
+        pr_body = "\n".join(pr_body_lines)
+
         pr_data = gh.create_pull_request(
             repo=doc_repo,
             title=pr_title,

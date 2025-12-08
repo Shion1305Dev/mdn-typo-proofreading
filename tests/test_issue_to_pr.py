@@ -14,7 +14,7 @@ import pytest
 # Add the scripts directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent / ".github" / "scripts"))
 
-from issue_to_pr import normalize_diff, compute_result_hash
+from issue_to_pr import normalize_diff, compute_result_hash, generate_diff_from_suggestions
 
 
 class TestNormalizeDiff:
@@ -83,6 +83,77 @@ class TestNormalizeDiff:
         assert "context line" in result
         assert "-removed line" in result
         assert "+added line" in result
+
+
+class TestGenerateDiffFromSuggestions:
+    """Tests for the generate_diff_from_suggestions function."""
+
+    def test_generates_valid_unified_diff(self):
+        """Should generate a valid unified diff."""
+        file_path = "test.txt"
+        file_content = "This is old text\nAnother line\n"
+        suggestions = [
+            {"original": "old", "suggestion": "new"},
+        ]
+
+        result = generate_diff_from_suggestions(file_path, file_content, suggestions)
+
+        assert "--- a/test.txt" in result
+        assert "+++ b/test.txt" in result
+        assert "-This is old text" in result
+        assert "+This is new text" in result
+
+    def test_applies_multiple_suggestions(self):
+        """Should apply multiple suggestions."""
+        file_path = "test.txt"
+        file_content = "First typo here\nSecond typo there\n"
+        suggestions = [
+            {"original": "typo", "suggestion": "correction"},
+            {"original": "there", "suggestion": "here"},
+        ]
+
+        result = generate_diff_from_suggestions(file_path, file_content, suggestions)
+
+        # Should contain both changes
+        assert "correction" in result
+        assert "here" in result
+
+    def test_returns_empty_for_no_changes(self):
+        """Should return empty string when no changes are made."""
+        file_path = "test.txt"
+        file_content = "No changes needed\n"
+        suggestions = [
+            {"original": "nonexistent", "suggestion": "something"},
+        ]
+
+        result = generate_diff_from_suggestions(file_path, file_content, suggestions)
+
+        assert result == ""
+
+    def test_handles_empty_suggestions(self):
+        """Should handle empty suggestions list."""
+        file_path = "test.txt"
+        file_content = "Some content\n"
+        suggestions = []
+
+        result = generate_diff_from_suggestions(file_path, file_content, suggestions)
+
+        assert result == ""
+
+    def test_handles_japanese_text(self):
+        """Should handle Japanese text properly."""
+        file_path = "ja/test.md"
+        file_content = "これはテストです。\nアクセスをアクセスを提供する。\n"
+        suggestions = [
+            {"original": "アクセスをアクセスを", "suggestion": "アクセスを"},
+        ]
+
+        result = generate_diff_from_suggestions(file_path, file_content, suggestions)
+
+        assert "--- a/ja/test.md" in result
+        assert "+++ b/ja/test.md" in result
+        assert "-アクセスをアクセスを提供する。" in result
+        assert "+アクセスを提供する。" in result
 
 
 class TestComputeResultHash:
