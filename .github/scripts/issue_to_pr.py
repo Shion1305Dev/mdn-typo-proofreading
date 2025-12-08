@@ -317,6 +317,11 @@ def generate_stable_diff(
         # Process results as they complete
         for future in as_completed(futures):
             attempt_number, diff_content, result_hash = future.result()
+            print(f"Attempt {attempt_number} completed.")
+            print("--------------------------------------------------")
+            print(f"Diff Content:\n{diff_content}")
+            print("--------------------------------------------------")
+            print(f"Result Hash: {result_hash}")
 
             if diff_content is None or result_hash is None:
                 continue
