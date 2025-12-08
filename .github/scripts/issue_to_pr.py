@@ -203,18 +203,36 @@ def generate_diff_from_suggestions(
     # Start with original content
     modified_content = file_content
 
+    log(f"Processing {len(suggestions)} suggestions...")
+
     # Apply all suggestions
-    for sug in suggestions:
+    for idx, sug in enumerate(suggestions, 1):
         original = sug.get("original", "")
         suggestion = sug.get("suggestion", "")
 
-        if original and suggestion and original in modified_content:
-            # Replace first occurrence
+        log(f"Suggestion {idx}:")
+        log(f"  Original text: '{original}'")
+        log(f"  Suggested text: '{suggestion}'")
+
+        if not original or not suggestion:
+            log(f"  Skipping: empty original or suggestion", "WARN")
+            continue
+
+        if original in modified_content:
+            log(f"  Found original text in file. Applying replacement...")
             modified_content = modified_content.replace(original, suggestion, 1)
+            log(f"  Replacement applied successfully", "SUCCESS")
+        else:
+            log(f"  Original text NOT found in file", "WARN")
+            # Show a snippet of the file to help debug
+            log(f"  File content preview (first 500 chars):\n{file_content[:500]}")
 
     # If no changes were made, return empty diff
     if file_content == modified_content:
+        log("No changes were made to the file content", "WARN")
         return ""
+
+    log(f"File content modified. Changes made: {len(file_content)} -> {len(modified_content)} chars")
 
     # Generate unified diff
     # Split into lines without keeping ends first, let difflib handle line endings
@@ -417,7 +435,7 @@ def generate_stable_diff(
             log("=" * 60)
 
             # Check if this result matches any previous result
-            for prev_attempt, _prev_diff, prev_hash in valid_results:
+            for prev_attempt, _, prev_hash in valid_results:
                 if result_hash == prev_hash:
                     # Found a match!
                     first_attempt = min(prev_attempt, attempt_number)
@@ -578,11 +596,12 @@ def main() -> None:
     mongo_db = os.getenv("MONGO_DB", "mdn_proofreading")
     ollama_endpoint = os.getenv("OLLAMA_ENDPOINT", "http://localhost:11434")
     ollama_model = os.getenv("OLLAMA_MODEL", "")
-    gh_pat = os.getenv("GH_PAT", "")
+    doc_repo_pat = os.getenv("DOC_REPO_PAT", "")
+    issue_repo_pat = os.getenv("ISSUE_REPO_PAT", "")
     docs_workdir = Path(os.getenv("DOCS_WORKDIR", ""))
 
     # Validate inputs
-    if not all([issue_number, issue_repo, doc_repo, mongo_uri, ollama_model, gh_pat, docs_workdir]):
+    if not all([issue_number, issue_repo, doc_repo, mongo_uri, ollama_model, doc_repo_pat, issue_repo_pat, docs_workdir]):
         log("Missing required environment variables.", "ERROR")
         sys.exit(1)
 
@@ -593,7 +612,8 @@ def main() -> None:
     log(f"Processing issue #{issue_number} from {issue_repo}")
 
     # Initialize clients
-    gh = GitHubAPI(gh_pat)
+    gh_doc = GitHubAPI(doc_repo_pat)  # For doc repo operations (PRs)
+    gh_issue = GitHubAPI(issue_repo_pat)  # For issue repo operations (comments)
     ollama = OllamaClient(ollama_endpoint, ollama_model)
 
     # Fetch MongoDB suggestions
@@ -616,12 +636,12 @@ def main() -> None:
 
     # Fetch issue comments
     log("Fetching issue comments...")
-    comments = gh.get_issue_comments(issue_repo, issue_number)
+    comments = gh_issue.get_issue_comments(issue_repo, issue_number)
     log(f"Found {len(comments)} comments.")
 
     # Check for existing PR
     log("Checking for existing PR...")
-    existing_pr = find_existing_pr_for_file(gh, doc_repo, file_path)
+    existing_pr = find_existing_pr_for_file(gh_doc, doc_repo, file_path)
 
     if existing_pr:
         log(f"Found existing PR #{existing_pr['number']}: {existing_pr['html_url']}")
@@ -728,7 +748,7 @@ def main() -> None:
 
         pr_body = "\n".join(pr_body_lines)
 
-        pr_data = gh.create_pull_request(
+        pr_data = gh_doc.create_pull_request(
             repo=doc_repo,
             title=pr_title,
             body=pr_body,
@@ -744,7 +764,7 @@ def main() -> None:
     # Post comment to issue
     log("Posting comment to issue...")
     comment_body = f"Created PR: {pr_url}"
-    gh.create_issue_comment(issue_repo, issue_number, comment_body)
+    gh_issue.create_issue_comment(issue_repo, issue_number, comment_body)
 
     log("Done!", "SUCCESS")
 
