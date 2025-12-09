@@ -40,6 +40,7 @@ jobs:
         run: uv sync
 
       - name: Generate diff and create/update PR
+        id: generate-pr
         working-directory: issue-repo
         env:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -54,3 +55,11 @@ jobs:
           ISSUE_REPO_PAT: ${{ secrets.ISSUE_REPO_PAT }}
           DOCS_WORKDIR: ${{ github.workspace }}/docs-repo
         run: uv run .github/scripts/issue_to_pr.py
+
+      - name: Remove draft label on failure
+        if: failure() && steps.generate-pr.conclusion == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.ISSUE_REPO_PAT }}
+        run: |
+          gh issue edit ${{ github.event.issue.number }} --remove-label "draft"
+          gh issue comment ${{ github.event.issue.number }} --body "❌ Failed to generate PR. The 'draft' label has been removed. Please check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
