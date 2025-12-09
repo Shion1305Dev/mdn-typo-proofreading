@@ -61,5 +61,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.ISSUE_REPO_PAT }}
         run: |
-          gh issue edit ${{ github.event.issue.number }} --remove-label "draft"
-          gh issue comment ${{ github.event.issue.number }} --body "❌ Failed to generate PR. The 'draft' label has been removed. Please check the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details."
+          gh issue edit ${{ github.event.issue.number }} --repo ${{ github.repository }} --remove-label "draft"
