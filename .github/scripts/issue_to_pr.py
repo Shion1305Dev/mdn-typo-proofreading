@@ -179,23 +179,27 @@ def build_prompt(
     lines.append("3. When user feedback conflicts with suggestions, USER FEEDBACK WINS.")
     lines.append("4. Fix only Japanese typos and related textual issues.")
     lines.append("5. Do NOT modify unrelated text.")
-    lines.append("6. Output ONLY a unified diff (git diff format) for the target file.")
-    lines.append(f"7. Use the exact file path: {file_path}")
-    lines.append("8. The diff MUST follow this format:")
-    lines.append("   --- a/path/to/file")
-    lines.append("   +++ b/path/to/file")
-    lines.append("   @@ -start,count +start,count @@ optional section header")
-    lines.append("    context line (starts with space)")
-    lines.append("   -removed line (starts with minus)")
-    lines.append("   +added line (starts with plus)")
-    lines.append("    context line (starts with space)")
-    lines.append("9. Include at least 3 lines of context before and after each change.")
-    lines.append("10. In the diff output, do NOT include the line numbers from the reference content.")
-    lines.append("11. The diff should contain the actual file content, not the numbered version.")
-    lines.append("12. Do NOT include markdown code fences, explanations, or extra text.")
-    lines.append("13. Output ONLY the raw diff content.")
     lines.append("")
-    lines.append("Generate the unified diff now:")
+    lines.append("6. Output your changes in JSON format with this structure:")
+    lines.append('   {')
+    lines.append('     "changes": [')
+    lines.append('       {')
+    lines.append('         "line_number": <number>,')
+    lines.append('         "old_text": "original line content",')
+    lines.append('         "new_text": "corrected line content"')
+    lines.append('       }')
+    lines.append('     ]')
+    lines.append('   }')
+    lines.append("")
+    lines.append("7. Each change must specify:")
+    lines.append("   - line_number: The line number from the numbered content above")
+    lines.append("   - old_text: The EXACT current text of that line (without line number)")
+    lines.append("   - new_text: The corrected text for that line")
+    lines.append("")
+    lines.append("8. Do NOT include markdown code fences like ```json")
+    lines.append("9. Output ONLY valid JSON, nothing else.")
+    lines.append("")
+    lines.append("Generate the JSON now:")
 
     return "\n".join(lines)
 
@@ -261,6 +265,76 @@ def generate_diff_from_suggestions(
 
     # Join with newlines to create proper diff format
     return "\n".join(diff_lines) + "\n"
+
+
+def apply_json_changes_to_content(
+    file_content: str,
+    json_response: str,
+) -> Optional[str]:
+    """
+    Parse JSON changes from LLM and apply them to file content.
+
+    Returns:
+        Modified file content, or None if parsing fails
+    """
+    try:
+        # Remove markdown code fences if present
+        cleaned = re.sub(r"^```(?:json)?\s*\n", "", json_response)
+        cleaned = re.sub(r"\n```\s*$", "", cleaned)
+        cleaned = cleaned.strip()
+
+        # Parse JSON
+        data = json.loads(cleaned)
+        changes = data.get("changes", [])
+
+        if not changes:
+            log("No changes in JSON response", "WARN")
+            return None
+
+        log(f"Parsed {len(changes)} changes from JSON")
+
+        # Split content into lines
+        lines = file_content.splitlines()
+
+        # Apply changes (sort by line number descending to avoid index shifts)
+        changes_sorted = sorted(changes, key=lambda x: x.get("line_number", 0), reverse=True)
+
+        for change in changes_sorted:
+            line_num = change.get("line_number")
+            old_text = change.get("old_text")
+            new_text = change.get("new_text")
+
+            if not all([line_num, old_text is not None, new_text is not None]):
+                log(f"Skipping invalid change: {change}", "WARN")
+                continue
+
+            # Convert to 0-based index
+            idx = line_num - 1
+
+            if idx < 0 or idx >= len(lines):
+                log(f"Line number {line_num} out of range (file has {len(lines)} lines)", "WARN")
+                continue
+
+            # Verify old text matches
+            if lines[idx] != old_text:
+                log(f"Line {line_num} mismatch. Expected: '{old_text}', Got: '{lines[idx]}'", "WARN")
+                log(f"Skipping change at line {line_num} due to mismatch", "WARN")
+                continue
+
+            log(f"Applying change at line {line_num}: '{old_text}' -> '{new_text}'")
+            lines[idx] = new_text
+
+        return "\n".join(lines)
+
+    except json.JSONDecodeError as e:
+        log(f"Failed to parse JSON: {e}", "ERROR")
+        log(f"Response was: {json_response[:500]}", "ERROR")
+        return None
+    except Exception as e:
+        log(f"Error applying JSON changes: {e}", "ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
+        return None
 
 
 def normalize_diff(raw_diff: str) -> str:
@@ -358,10 +432,12 @@ def _generate_single_diff(
     attempt_number: int,
     ollama: OllamaClient,
     prompt: str,
+    file_path: str,
+    file_content: str,
     workdir: Path,
 ) -> Tuple[int, Optional[str], Optional[str]]:
     """
-    Generate a single diff attempt.
+    Generate a single diff attempt using JSON-based approach.
 
     Returns:
         (attempt_number, diff_content or None, result_hash or None)
@@ -369,33 +445,62 @@ def _generate_single_diff(
     try:
         log(f"Attempt {attempt_number}/{MAX_ATTEMPTS} starting...")
 
-        # Generate response from Ollama
+        # Generate JSON response from Ollama
         raw_response = ollama.generate(prompt)
         log(f"Attempt {attempt_number}: Raw response length: {len(raw_response)} chars")
+        log(f"--- JSON response (attempt {attempt_number}) ---")
+        log(raw_response[:1000])  # Show first 1000 chars
+        log(f"--- End of JSON response (attempt {attempt_number}) ---")
 
-        # Normalize the diff
-        candidate = normalize_diff(raw_response)
-        log(f"Attempt {attempt_number}: Normalized diff length: {len(candidate)} chars")
-
-        if not candidate:
-            log(f"Attempt {attempt_number}: Empty normalized diff, skipping.", "WARN")
-            log(f"Raw response was: {raw_response[:200]}...")
+        # Parse JSON and apply changes
+        modified_content = apply_json_changes_to_content(file_content, raw_response)
+        if modified_content is None:
+            log(f"Attempt {attempt_number}: Failed to parse or apply JSON changes", "WARN")
             return attempt_number, None, None
 
-        # Show the normalized diff
-        log(f"--- Normalized diff (attempt {attempt_number}) ---")
-        log(candidate)
-        log(f"--- End of normalized diff (attempt {attempt_number}) ---")
+        # Check if any changes were made
+        if modified_content == file_content:
+            log(f"Attempt {attempt_number}: No changes were made", "WARN")
+            return attempt_number, None, None
+
+        # Generate diff from original and modified content
+        diff = generate_diff_from_suggestions(
+            file_path,
+            file_content,
+            [{"original": file_content, "suggestion": modified_content}]
+        )
+
+        # Actually, use difflib directly since we have both versions
+        original_lines = file_content.splitlines(keepends=False)
+        modified_lines = modified_content.splitlines(keepends=False)
+
+        diff_lines = list(difflib.unified_diff(
+            original_lines,
+            modified_lines,
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path}",
+            lineterm="",
+        ))
+
+        if not diff_lines:
+            log(f"Attempt {attempt_number}: Generated empty diff", "WARN")
+            return attempt_number, None, None
+
+        diff = "\n".join(diff_lines) + "\n"
+
+        log(f"--- Generated diff (attempt {attempt_number}) ---")
+        log(diff)
+        log(f"--- End of diff (attempt {attempt_number}) ---")
 
         # Check if diff applies and compute result hash
-        result_hash = compute_result_hash(candidate, workdir)
+        result_hash = compute_result_hash(diff, workdir)
         if result_hash is None:
             log(f"Attempt {attempt_number}: Diff does not apply cleanly, skipping.", "WARN")
             return attempt_number, None, None
 
         log(f"Attempt {attempt_number}: Valid diff generated! Hash: {result_hash[:16]}...", "SUCCESS")
 
-        return attempt_number, candidate, result_hash
+        return attempt_number, diff, result_hash
 
     except Exception as e:
         log(f"Attempt {attempt_number}: Error: {e}", "ERROR")
@@ -407,6 +512,8 @@ def _generate_single_diff(
 def generate_stable_diff(
     ollama: OllamaClient,
     prompt: str,
+    file_path: str,
+    file_content: str,
     workdir: Path,
 ) -> Tuple[Optional[str], int, Optional[int], Optional[int]]:
     """
@@ -423,7 +530,7 @@ def generate_stable_diff(
     with ThreadPoolExecutor(max_workers=2) as executor:
         # Submit all attempts
         futures = {
-            executor.submit(_generate_single_diff, attempt, ollama, prompt, workdir): attempt
+            executor.submit(_generate_single_diff, attempt, ollama, prompt, file_path, file_content, workdir): attempt
             for attempt in range(1, MAX_ATTEMPTS + 1)
         }
 
@@ -698,7 +805,7 @@ def main() -> None:
         # Generate stable diff
         log(f"Generating stable diff (max {MAX_ATTEMPTS} attempts)...")
         ollama_diff, total_attempts, stable_1, stable_2 = generate_stable_diff(
-            ollama, prompt, docs_workdir
+            ollama, prompt, file_path, file_content, docs_workdir
         )
 
         if ollama_diff is not None:

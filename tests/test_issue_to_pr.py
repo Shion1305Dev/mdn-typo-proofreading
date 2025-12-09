@@ -14,7 +14,12 @@ import pytest
 # Add the scripts directory to the path
 sys.path.insert(0, str(Path(__file__).parent.parent / ".github" / "scripts"))
 
-from issue_to_pr import normalize_diff, compute_result_hash, generate_diff_from_suggestions
+from issue_to_pr import (
+    normalize_diff,
+    compute_result_hash,
+    generate_diff_from_suggestions,
+    apply_json_changes_to_content,
+)
 
 
 class TestNormalizeDiff:
@@ -354,3 +359,268 @@ class TestComputeResultHash:
         # This might return None or a hash depending on implementation
         # The important thing is it doesn't crash
         assert result_hash is None or isinstance(result_hash, str)
+
+
+class TestApplyJsonChangesToContent:
+    """Tests for the apply_json_changes_to_content function."""
+
+    def test_parses_simple_json_change(self):
+        """Should parse and apply a simple JSON change."""
+        file_content = "Line 1\nLine 2\nLine 3\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 2,
+                    "old_text": "Line 2",
+                    "new_text": "Modified Line 2"
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        assert "Modified Line 2" in result
+        assert "Line 1" in result
+        assert "Line 3" in result
+        # Original Line 2 should be replaced
+        lines = result.splitlines()
+        assert lines[1] == "Modified Line 2"
+
+    def test_parses_multiple_changes(self):
+        """Should parse and apply multiple JSON changes."""
+        file_content = "First line\nSecond line\nThird line\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 1,
+                    "old_text": "First line",
+                    "new_text": "Modified first line"
+                },
+                {
+                    "line_number": 3,
+                    "old_text": "Third line",
+                    "new_text": "Modified third line"
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        lines = result.splitlines()
+        assert lines[0] == "Modified first line"
+        assert lines[1] == "Second line"
+        assert lines[2] == "Modified third line"
+
+    def test_removes_markdown_code_fences(self):
+        """Should remove markdown code fences from JSON response."""
+        file_content = "Test line\n"
+        json_response = """```json
+{
+    "changes": [
+        {
+            "line_number": 1,
+            "old_text": "Test line",
+            "new_text": "Changed line"
+        }
+    ]
+}
+```"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        assert "Changed line" in result
+
+    def test_handles_japanese_text(self):
+        """Should handle Japanese text in changes."""
+        file_content = "これはテストです。\n日本語のテキストです。\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 1,
+                    "old_text": "これはテストです。",
+                    "new_text": "これはサンプルです。"
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        lines = result.splitlines()
+        assert lines[0] == "これはサンプルです。"
+        assert lines[1] == "日本語のテキストです。"
+
+    def test_returns_none_for_invalid_json(self):
+        """Should return None for invalid JSON."""
+        file_content = "Test line\n"
+        invalid_json = "{ this is not valid json }"
+
+        result = apply_json_changes_to_content(file_content, invalid_json)
+
+        assert result is None
+
+    def test_returns_none_for_empty_changes(self):
+        """Should return None when changes array is empty."""
+        file_content = "Test line\n"
+        json_response = '{"changes": []}'
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is None
+
+    def test_skips_invalid_change_entry(self):
+        """Should skip changes with missing required fields."""
+        file_content = "Line 1\nLine 2\nLine 3\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 1,
+                    "old_text": "Line 1",
+                    "new_text": "Modified Line 1"
+                },
+                {
+                    "line_number": 2
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        # Should apply the valid change and skip the invalid one
+        assert result is not None
+        lines = result.splitlines()
+        assert lines[0] == "Modified Line 1"
+        assert lines[1] == "Line 2"  # Should remain unchanged
+
+    def test_handles_line_number_out_of_range(self):
+        """Should skip changes with line numbers out of range."""
+        file_content = "Line 1\nLine 2\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 1,
+                    "old_text": "Line 1",
+                    "new_text": "Modified Line 1"
+                },
+                {
+                    "line_number": 10,
+                    "old_text": "Does not exist",
+                    "new_text": "Something"
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        # Should apply the valid change and skip the out-of-range one
+        assert result is not None
+        lines = result.splitlines()
+        assert lines[0] == "Modified Line 1"
+        assert len(lines) == 2
+
+    def test_applies_changes_in_correct_order(self):
+        """Should apply changes in reverse line order to avoid index shifts."""
+        file_content = "Line 1\nLine 2\nLine 3\n"
+        # Give changes in forward order, function should handle reverse processing
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 1,
+                    "old_text": "Line 1",
+                    "new_text": "New Line 1"
+                },
+                {
+                    "line_number": 2,
+                    "old_text": "Line 2",
+                    "new_text": "New Line 2"
+                },
+                {
+                    "line_number": 3,
+                    "old_text": "Line 3",
+                    "new_text": "New Line 3"
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        lines = result.splitlines()
+        assert lines[0] == "New Line 1"
+        assert lines[1] == "New Line 2"
+        assert lines[2] == "New Line 3"
+
+    def test_skips_change_on_old_text_mismatch(self):
+        """Should skip change when old_text doesn't match exactly."""
+        file_content = "Line 1\nLine 2\nLine 3\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 2,
+                    "old_text": "Wrong old text",
+                    "new_text": "New Line 2"
+                }
+            ]
+        }"""
+
+        # Should skip the change due to mismatch
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        lines = result.splitlines()
+        # Line 2 should remain unchanged
+        assert lines[1] == "Line 2"
+
+    def test_applies_only_matching_changes_when_mixed(self):
+        """Should apply matching changes and skip mismatching ones."""
+        file_content = "Line 1\nLine 2\nLine 3\n"
+        json_response = """{
+            "changes": [
+                {
+                    "line_number": 1,
+                    "old_text": "Line 1",
+                    "new_text": "Modified Line 1"
+                },
+                {
+                    "line_number": 2,
+                    "old_text": "Wrong text",
+                    "new_text": "Should not apply"
+                },
+                {
+                    "line_number": 3,
+                    "old_text": "Line 3",
+                    "new_text": "Modified Line 3"
+                }
+            ]
+        }"""
+
+        result = apply_json_changes_to_content(file_content, json_response)
+
+        assert result is not None
+        lines = result.splitlines()
+        assert lines[0] == "Modified Line 1"
+        assert lines[1] == "Line 2"  # Should remain unchanged
+        assert lines[2] == "Modified Line 3"
+
+    def test_handles_code_fence_variations(self):
+        """Should handle different code fence styles."""
+        file_content = "Test line\n"
+
+        # Test with ```json prefix
+        json_response1 = """```json
+{"changes": [{"line_number": 1, "old_text": "Test line", "new_text": "Changed"}]}
+```"""
+        result1 = apply_json_changes_to_content(file_content, json_response1)
+        assert result1 is not None
+        assert "Changed" in result1
+
+        # Test with ``` only
+        json_response2 = """```
+{"changes": [{"line_number": 1, "old_text": "Test line", "new_text": "Changed"}]}
+```"""
+        result2 = apply_json_changes_to_content(file_content, json_response2)
+        assert result2 is not None
+        assert "Changed" in result2
