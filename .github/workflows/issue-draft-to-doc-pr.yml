@@ -50,7 +50,7 @@ jobs:
           MONGO_URI: ${{ secrets.MONGO_URI }}
           MONGO_DB: mdn_proofreading
           OLLAMA_ENDPOINT: http://localhost:11434
-          OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL }}
+          OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL }}
           DOC_REPO_PAT: ${{ secrets.DOC_REPO_PAT }}
           ISSUE_REPO_PAT: ${{ secrets.ISSUE_REPO_PAT }}
           DOCS_WORKDIR: ${{ github.workspace }}/docs-repo
