@@ -133,13 +133,19 @@ def build_prompt(
     comments: List[Dict[str, Any]],
 ) -> str:
     """Construct the prompt for Ollama."""
+    # Add line numbers to file content
+    file_lines = file_content.splitlines()
+    numbered_content = "\n".join(
+        f"{i:4d} | {line}" for i, line in enumerate(file_lines, start=1)
+    )
+
     lines = [
         "You are a Japanese typo correction assistant.",
         "",
         f"Target file: {file_path}",
         "",
-        "=== CURRENT FILE CONTENT ===",
-        file_content,
+        "=== CURRENT FILE CONTENT (with line numbers) ===",
+        numbered_content,
         "",
         "=== AUTOMATIC SUGGESTIONS ===",
     ]
@@ -168,13 +174,14 @@ def build_prompt(
         lines.append("")
 
     lines.append("=== INSTRUCTIONS ===")
-    lines.append("1. Use the automatic suggestions as a starting point.")
-    lines.append("2. When user feedback conflicts with suggestions, USER FEEDBACK WINS.")
-    lines.append("3. Fix only Japanese typos and related textual issues.")
-    lines.append("4. Do NOT modify unrelated text.")
-    lines.append("5. Output ONLY a unified diff (git diff format) for the target file.")
-    lines.append(f"6. Use the exact file path: {file_path}")
-    lines.append("7. The diff MUST follow this format:")
+    lines.append("1. The file content above is shown with line numbers for reference.")
+    lines.append("2. Use the automatic suggestions as a starting point.")
+    lines.append("3. When user feedback conflicts with suggestions, USER FEEDBACK WINS.")
+    lines.append("4. Fix only Japanese typos and related textual issues.")
+    lines.append("5. Do NOT modify unrelated text.")
+    lines.append("6. Output ONLY a unified diff (git diff format) for the target file.")
+    lines.append(f"7. Use the exact file path: {file_path}")
+    lines.append("8. The diff MUST follow this format:")
     lines.append("   --- a/path/to/file")
     lines.append("   +++ b/path/to/file")
     lines.append("   @@ -start,count +start,count @@ optional section header")
@@ -182,9 +189,11 @@ def build_prompt(
     lines.append("   -removed line (starts with minus)")
     lines.append("   +added line (starts with plus)")
     lines.append("    context line (starts with space)")
-    lines.append("8. Include at least 3 lines of context before and after each change.")
-    lines.append("9. Do NOT include markdown code fences, explanations, or extra text.")
-    lines.append("10. Output ONLY the raw diff content.")
+    lines.append("9. Include at least 3 lines of context before and after each change.")
+    lines.append("10. In the diff output, do NOT include the line numbers from the reference content.")
+    lines.append("11. The diff should contain the actual file content, not the numbered version.")
+    lines.append("12. Do NOT include markdown code fences, explanations, or extra text.")
+    lines.append("13. Output ONLY the raw diff content.")
     lines.append("")
     lines.append("Generate the unified diff now:")
 
