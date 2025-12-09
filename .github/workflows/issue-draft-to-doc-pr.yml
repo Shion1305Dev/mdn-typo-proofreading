@@ -14,10 +14,6 @@ jobs:
     if: github.event.label.name == 'draft'
     runs-on: self-hosted
 
-    concurrency:
-      group: issue-draft-pr
-      cancel-in-progress: false
-
     steps:
       - name: Checkout issue repo
         uses: actions/checkout@v4
