@@ -40,8 +40,8 @@ Django は、Python で書かれた高機能なサーバーサイドウェブフ
   - : このチュートリアルでは、地域図書館ウェブサイトを拡張し、ホームページにセッションベースのアクセスカウンターを追加します。これは比較的簡単な例ですが、セッションフレームワークを使用して、自分のサイトの匿名ユーザーに永続的な動作を提供する方法を示しています。
 - [Django チュートリアル Part 8: ユーザー認証と権限](/ja/docs/Learn_web_development/Extensions/Server-side/Django/Authentication)
   - : このチュートリアルでは、ユーザーが自分のアカウントで自分のサイトにログインできるようにする方法と、ログインできるかどうかを制御する方法、ログインしているかどうか、アクセス許可によって表示する方法について説明します。このデモンストレーションの一環として、地域図書館ウェブサイトを拡張し、ログインページとログアウトページを追加し、貸し出された本を表示するためのユーザーとスタッフのページを追加します。
-- [Django チュートリアル Part 9: フォームの操作](/ja/docs/Learn_web_development/Extensions/Server-side/Django/Forms)
-  - : このチュートリアルでは、Django で [HTML フォーム](/ja/docs/Learn_web_development/Extensions/Server-side/Django/Forms)を扱う方法、特にモデルインスタンスを作成、更新、削除するためのフォームを書く最も簡単な方法を紹介します。このデモンストレーションの一環として、図書館員が書籍を更新したり、管理アプリケーションを使用するのではなく独自のフォームを使用して著者の作成、更新、削除を行えるように、地域図書館ウェブサイトを拡張します。
+- [Django チュートリアル Part 9: フォームの操作](/ja/docs/Learn_web_development/Extensions/Server-side/Django/forms)
+  - : このチュートリアルでは、Django で [HTML フォーム](/ja/docs/Learn_web_development/Extensions/Server-side/Django/forms)を扱う方法、特にモデルインスタンスを作成、更新、削除するためのフォームを書く最も簡単な方法を紹介します。このデモンストレーションの一環として、図書館員が書籍を更新したり、管理アプリケーションを使用するのではなく独自のフォームを使用して著者の作成、更新、削除を行えるように、地域図書館ウェブサイトを拡張します。
 - [Django チュートリアル Part 10: Django ウェブアプリケーションのテスト](/ja/docs/Learn_web_development/Extensions/Server-side/Django/Testing)
   - : ウェブサイトが成長するにつれて、手動でテストするのが困難になります。コンポーネント間のやりとりが複雑になるにつれて、ある領域の小さな変更が、他の領域へ影響がないか検証するためのテストの追加が多く必要になります。これらの問題を軽減する 1 つの方法は、変更を行うたびに簡単かつ確実に実行できる自動テストを作成することです。このチュートリアルでは、Django のテストフレームワークを使用して、あなたのウェブサイトの単体テストを自動化する方法を示します。
 - [Django チュートリアル Part 11: Django を本番環境にデプロイする](/ja/docs/Learn_web_development/Extensions/Server-side/Django/Deployment)
